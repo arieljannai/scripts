@@ -1,0 +1,1 @@
+net statistics workstation | find "Statistics since"
