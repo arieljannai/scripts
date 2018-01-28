@@ -2,6 +2,52 @@
 
 setlocal EnableDelayedExpansion
 
+:: Verify needed commands exist
+where git >nul 2>&1
+IF %errorlevel% NEQ 0 (
+	@echo **git** was not found.
+) ELSE (
+	where head >nul 2>&1
+	IF %errorlevel% NEQ 0 @echo **head** was not found. Usually found at git/usr/bin
+	where tail >nul 2>&1
+	IF %errorlevel% NEQ 0 @echo **tail** was not found. Usually found at git/usr/bin
+	where grep >nul 2>&1
+	IF %errorlevel% NEQ 0 @echo **grep** was not found. Usually found at git/usr/bin
+)
+where curl >nul 2>&1
+IF %errorlevel% NEQ 0 @echo **curl** was not found.
+where 7z >nul 2>&1
+IF %errorlevel% NEQ 0 @echo **7z** was not found.
+
+IF EXIST "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\Common7\Tools\VsDevCmd.bat" (
+	set VS_DEV_INIT_BATCH="C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\Common7\Tools\VsDevCmd.bat"
+) ELSE (
+	@echo VsDevCmd.bat was not found in its usual location.
+	@echo Expected to find **VsDevCmd.bat** at:
+	@echo "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\Common7\Tools\" 
+	@echo Please enter the correct location:
+	set /p VS_DEV_INIT_BATCH=
+)
+
+@echo.
+@echo If you had any problems or missing programs, 
+@echo you can install them with chocolatey.
+@echo For example, for installing all dependencies, run:
+@echo.
+@echo     **  cinst -y visualstudio2017community git curl 7zip  **
+@echo.
+@echo To install chocolatey, visit: https://chocolatey.org/install#installing-chocolatey
+@echo.
+@echo.
+@echo If something is missing, that's the time.
+@echo Abort the script with Ctrl-C, confirm, and go install everything.
+@echo.
+@echo.
+@echo If all the dependencies are met, you can start the script^^!
+@echo.
+pause
+
+
 call :check-admin
 goto :eof
 :: remove this line ^^^ to activate
@@ -46,7 +92,7 @@ call :script-start
 goto script-end
 
 :script-end
-@echo Done!
+@echo Done^^!
 @echo.
 popd
 pause
