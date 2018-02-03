@@ -1,5 +1,5 @@
 @ECHO OFF
-
+@ECHO.
 setlocal EnableDelayedExpansion
 
 :: Verify needed commands exist
@@ -15,7 +15,16 @@ IF %errorlevel% NEQ 0 (
 	IF %errorlevel% NEQ 0 @echo **grep** was not found. Usually found at git/usr/bin
 )
 where curl >nul 2>&1
-IF %errorlevel% NEQ 0 @echo **curl** was not found.
+IF %errorlevel% NEQ 0 (
+	@echo **curl** was not found. When installing, verify that https addresses can be fetched.
+) ELSE (
+	curl https://google.com 2>&1 | grep -o "(60) SSL certificate problem" >nul 2>&1
+	IF %errorlevel% == 0 (
+		@echo There's a problem with curl getting https addresses. Please fix that^^!
+		@echo curl: ^(60^) SSL certificate problem: unable to get local issuer certificate
+		@echo More details here: https://curl.haxx.se/docs/sslcerts.html
+	)
+)
 where 7z >nul 2>&1
 IF %errorlevel% NEQ 0 @echo **7z** was not found.
 
@@ -43,15 +52,21 @@ IF EXIST "C:\Program Files (x86)\Microsoft Visual Studio\2017\Community\Common7\
 @echo Abort the script with Ctrl-C, confirm, and go install everything.
 @echo.
 @echo.
-@echo If all the dependencies are met, you can start the script^^!
+@echo If all the dependencies are met (no problems were found), you can start the script^^!
 @echo.
 pause
 
-
 call :check-admin
+
+where RefreshEnv.cmd >nul 2>&1
+IF %errorlevel% NEQ 0 (
+	curl --silent -L -O https://raw.githubusercontent.com/chocolatey/choco/fdfcd06/src/chocolatey.resources/redirects/RefreshEnv.cmd
+)
+
 goto :eof
 :: remove this line ^^^ to activate
 
+:: All good, start the actual script.
 set TD_ROOT_DIR=
 
 IF "%1"=="/?" goto usage
@@ -88,15 +103,11 @@ set THIRD_PARTY=%TD_ROOT_DIR%\ThirdParty
 call :get-download-links
 call :download-installation-files
 call :script-start
-
+call :update-path
+RefreshEnv.cmd
+call :verify-third-party-folders
+call :remove-uneeded-files
 goto script-end
-
-:script-end
-@echo Done^^!
-@echo.
-popd
-pause
-goto :eof
 
 
 :: ### MAIN ###
@@ -206,16 +217,7 @@ popd
 exit /b
 :: ### END OF REMOVE UNEEDED FILES ###
 
-
-:: ### USAGE ###
-:usage
-@echo Usage: tdesktop-dev-installer.bat ^<tdesktop-buildpath^>
-exit /b 1
-:: ### END OF USAGE ###
-
-
 :: ### THIRD PARTY INSTALL FUNCTIONS ###
-:third-party-installations
 :install-perl
 @echo Installing perl
 %1 /qb APPDIR="%THIRD_PARTY%\Perl"
@@ -248,12 +250,12 @@ exit /b
 @echo Installing nasm
 >NUL 7z x -y %1
 set tmp=%1
->NUL rename %tmp:~0,-10% nasm
+>NUL rename %tmp:~0,-10% NASM
 exit /b
 
 :install-ninja
 @echo Installing ninja
->NUL 7z x -y -oninja %1
+>NUL 7z x -y -oNinja %1
 exit /b
 
 :install-python27
@@ -285,3 +287,42 @@ if not %errorlevel% == 0 (
 )
 exit /b
 :: ### END OF EXTRA FUNCTIONS ###
+
+:: ### ADD RELEVANT THIRD PARTY TO PATH ###
+:update-path
+cmd
+RefreshEnv.cmd
+setx /M PATH "%PATH%;%THIRD_PARTY%\gyp;%THIRD_PARTY%\Ninja;
+exit /b
+:: ### END OF ADD RELEVANT THIRD PARTY TO PATH ###
+
+:: ### VERIFY THIRD PARTY FOLDERS EXIST ###
+:verify-third-party-folders
+IF NOT EXIST "%THIRD_PARTY%\Perl" call :notify-missing-third-party-folder "%THIRD_PARTY%\Perl"
+IF NOT EXIST "%THIRD_PARTY%\NASM" call :notify-missing-third-party-folder "%THIRD_PARTY%\Perl"
+IF NOT EXIST "%THIRD_PARTY%\yasm" call :notify-missing-third-party-folder "%THIRD_PARTY%\Perl"
+IF NOT EXIST "%THIRD_PARTY%\msys64" call :notify-missing-third-party-folder "%THIRD_PARTY%\Perl"
+IF NOT EXIST "%THIRD_PARTY%\jom" call :notify-missing-third-party-folder "%THIRD_PARTY%\Perl"
+IF NOT EXIST "%THIRD_PARTY%\Python27" call :notify-missing-third-party-folder "%THIRD_PARTY%\Perl"
+IF NOT EXIST "%THIRD_PARTY%\cmake" call :notify-missing-third-party-folder "%THIRD_PARTY%\Perl"
+IF NOT EXIST "%THIRD_PARTY%\Ninja" call :notify-missing-third-party-folder "%THIRD_PARTY%\Perl"
+:: ### END OF VERIFY THIRD PARTY FOLDERS EXIST ###
+
+:: ### THIRD PARTY FOLDER IS MISSING ###
+:notify-missing-third-party-folder
+@echo The folder %~1 is missing. Keeping all installation files - please fix it manually. Not continuing to install Libraries.
+exit /b
+:: ### END OF THIRD PARTY FOLDER IS MISSING ###
+
+:: ### USAGE ###
+:usage
+@echo Usage: tdesktop-dev-installer.bat ^<tdesktop-buildpath^>
+exit /b 1
+:: ### END OF USAGE ###
+
+:script-end
+@echo Done^^!
+@echo.
+popd
+pause
+goto :eof
