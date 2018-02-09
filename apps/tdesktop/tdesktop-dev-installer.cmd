@@ -5,11 +5,17 @@ set bad=false
 
 IF "%1"=="/?" goto usage
 
+set CURL_CMD=curl --cacert curl-ca-bundle.crt
 set TD_ROOT_DIR=C:\TBuild
 set VS_DEV_CMD_REL_PATH=Common7\Tools\VsDevCmd.bat
 set VS_2017_LOCATION=C:\Program Files (x86)\Microsoft Visual Studio\2017
 set VS_2017_INSTANCE_NAME=Community
+set VS_INSTALL_PATH=%VS_2017_LOCATION%\%VS_2017_INSTANCE_NAME%
+set VS_DEV_INIT_BATCH=%VS_INSTALL_PATH%\%VS_DEV_CMD_REL_PATH%
+set VS_INSTALLER=%VS_2017_LOCATION%\..\Installer\vs_installer.exe
 set QT_VSIX=https://theqtcompany.gallerycdn.vsassets.io/extensions/theqtcompany/qtvisualstudiotools-19123/2.1.2/1501755913304/273958/1/qt-vsaddin-msvc2017-2.1.2-beta-03.08.2017.vsix
+
+IF "%1"=="/install-dependencies" goto install-dependencies
 
 REM Verify needed commands exist
 where git >nul 2>&1
@@ -43,7 +49,7 @@ IF %errorlevel% NEQ 0 (
 	@echo **curl** was not found. When installing, verify that https addresses can be fetched.
 	set bad=true
 ) ELSE (
-	curl https://google.com 2>&1 | grep -o "(60) SSL certificate problem" >nul 2>&1
+	curl https://example.com/curl-test-ssl 2>&1 | grep -o "SSL certificate problem" >nul 2>&1
 	IF !errorlevel! == 0 (
 		set bad=true
 		@echo There's a problem with curl getting https addresses. Please fix that^^!
@@ -57,12 +63,19 @@ IF %errorlevel% NEQ 0 (
 	@echo **7z** was not found.
 )
 
+call :notify-dependencies-status
+IF %errorlevel% NEQ 0 goto :eof
+
+
 set /p "VS_2017_LOCATION=Enter the location of VS installation (without specific version) or press [ENTER] for default [%VS_2017_LOCATION%]: "
 set /p "VS_2017_INSTANCE_NAME=Enter the relevant instance name or press [ENTER] for default [%VS_2017_INSTANCE_NAME%]: "
-set VS_DEV_INIT_BATCH=%VS_2017_LOCATION%\%VS_2017_INSTANCE_NAME%\%VS_DEV_CMD_REL_PATH%
+set VS_INSTALL_PATH=%VS_2017_LOCATION%\%VS_2017_INSTANCE_NAME%
+set VS_DEV_INIT_BATCH=%VS_INSTALL_PATH%\%VS_DEV_CMD_REL_PATH%
+set VS_INSTALLER=%VS_2017_LOCATION%\..\Installer\vs_installer.exe
 
 IF NOT EXIST "%VS_DEV_INIT_BATCH%" (
 	set bad=true
+	@echo.
 	@echo MISSING: VsDevCmd.bat was not found in its usual location.
 	@echo Expected to find **VsDevCmd.bat** at:
 	@echo "%VS_2017_LOCATION%\%VS_2017_INSTANCE_NAME%\%VS_DEV_CMD_REL_PATH%"
@@ -74,49 +87,33 @@ IF NOT EXIST "%VS_DEV_INIT_BATCH%" (
 
 IF NOT EXIST "%VS_2017_LOCATION%\%VS_2017_INSTANCE_NAME%\Common7\IDE\VC\VCTargets\Microsoft.Cpp.Default.props" (
 	set bad=true
-	@echo MISSING: Microsoft.Cpp.Default.props; Please install the visual studio feature "Windows 8.1 SDK and UCRT SDK"
+	@echo.
+	@echo MISSING: Please install the visual studio feature "Desktop development with C++" 
+	@echo.
+)
+
+IF NOT EXIST "C:\Program Files (x86)\Windows Kits\8.1\Include" (
+	set bad=true
+	@echo.
+	@echo MISSING: Please install the visual studio feature ""Windows 8.1 SDK and UCRT SDK"" 
 	@echo.
 )
 
 IF NOT EXIST "C:\Program Files (x86)\Windows Kits\10\Include\10.0.15063.0" (
 	set bad=true
+	@echo.
 	@echo MISSING: Please install the visual studio feature "Windows 10 SDK (10.0.15063.0) for Desktop C++ [x86 and x64]"
 	@echo.
 )
 
-IF "%bad%" == "false" (
-	call :check-admin
-	IF !errorlevel! NEQ 0 @echo. && @echo. && goto usage
-	@echo All the dependencies are met.
-	@echo You can start the script^^!
-	@echo.
-	pause
-	@echo.
-) ELSE (
-	@echo.
-	@echo If you had any problems or missing programs, 
-	@echo you can install them with chocolatey.
-	@echo For example, for installing all dependencies, run:
-	@echo.
-	@echo     **  cinst -y windows-sdk-8.1 windows-sdk-10.1 visualstudio2017community git curl 7zip  **
-	@echo     **  cinst -y visualstudio2017-workload-nativedesktop --package-parameters "--add includeRecommended;Microsoft.VisualStudio.Workload.NativeDesktop;Microsoft.VisualStudio.ComponentGroup.NativeDesktop.Win81;Microsoft.VisualStudio.Component.Windows10SDK.15063.Desktop" **
-	@echo.
-	@echo To install chocolatey, visit: https://chocolatey.org/install#installing-chocolatey
-	@echo.
-	@echo.
-	@echo Some things are missing, that's the time to fix it^^!
-	@echo.
-	goto :eof
-)
+call :notify-dependencies-status
+IF %errorlevel% NEQ 0 goto :eof
+
 
 where RefreshEnv.cmd >nul 2>&1
 IF %errorlevel% NEQ 0 (
-	curl --silent -L -O https://raw.githubusercontent.com/chocolatey/choco/fdfcd06/src/chocolatey.resources/redirects/RefreshEnv.cmd
+	%CURL_CMD% --silent -L -O https://raw.githubusercontent.com/chocolatey/choco/fdfcd06/src/chocolatey.resources/redirects/RefreshEnv.cmd
 )
-
-
-
-
 
 
 REM All good, start the actual script.
@@ -155,24 +152,24 @@ set THIRD_PARTY=%TD_ROOT_DIR%\ThirdParty
 
 pushd %THIRD_PARTY%
 call :install-all-dependencies
-call :install-third-party
-call :install-libraries
-call :build-tdesktop
-call :install-qt-vs-extension
+rem call :install-third-party
+rem call :install-libraries
+rem call :build-tdesktop
+rem call :install-qt-vs-extension
 popd
 goto script-end
-
-REM ### INSTALL THIRD PARTY ###
-:install-third-party
-	call :get-download-links
-	call :download-installation-files
-	call :install-all-third-party-folders
-	call :update-path
-	call :remove-sys-path-duplicates
-	call RefreshEnv.cmd
-	call :verify-third-party-folders
-	call :remove-uneeded-files
-exit /b
+rem 
+rem REM ### INSTALL THIRD PARTY ###
+rem :install-third-party
+rem 	call :get-download-links
+rem 	call :download-installation-files
+rem 	call :install-all-third-party-folders
+rem 	call :update-path
+rem 	call :remove-sys-path-duplicates
+rem 	call RefreshEnv.cmd
+rem 	call :verify-third-party-folders
+rem 	call :remove-uneeded-files
+rem exit /b
 REM ### END OF INSTALL THIRD PARTY ###
 
 REM ### MAIN ###
@@ -206,24 +203,24 @@ REM ### END OF MAIN ###
 REM ### GET DOWLOAD LINKS ###
 :get-download-links
 	@REM perl
-	curl --silent https://www.activestate.com/activeperl/downloads 2>&1 | grep -m1 -oP "(http://downloads.*?MSWin32-x64.*?\.exe)"  | head --lines=1 > tmpfile
+	%CURL_CMD% --silent https://www.activestate.com/activeperl/downloads 2>&1 | grep -m1 -oP "(http://downloads.*?MSWin32-x64.*?\.exe)"  | head --lines=1 > tmpfile
 	set /p downlink= < tmpfile
 	echo %downlink% > installation-links.txt
 
 	@REM nasm
-	curl --silent http://www.nasm.us/pub/nasm/releasebuilds/?C=M;O=D;F=0 2>&1 | grep -m1 -oP "((?:\d+\.?){3}/)" | head --lines=1 > tmpfile
+	%CURL_CMD% --silent http://www.nasm.us/pub/nasm/releasebuilds/?C=M;O=D;F=0 2>&1 | grep -m1 -oP "((?:\d+\.?){3}/)" | head --lines=1 > tmpfile
 	set /p downlink= < tmpfile
 	set downlink=%downlink:~0,-1%
 	set downlink=http://www.nasm.us/pub/nasm/releasebuilds/%downlink%/win64/nasm-%downlink%-win64.zip
 	echo %downlink% >> installation-links.txt
 
 	@REM yasm
-	curl --silent http://yasm.tortall.net/Download.html 2>&1 | grep -m1 -oP "http(.*win64\.exe)" | head --lines=1 > tmpfile
+	%CURL_CMD% --silent http://yasm.tortall.net/Download.html 2>&1 | grep -m1 -oP "http(.*win64\.exe)" | head --lines=1 > tmpfile
 	set /p downlink= < tmpfile
 	echo %downlink% >> installation-links.txt
 
 	@REM msys2
-	curl --silent http://repo.msys2.org/distrib/x86_64/ 2>&1 | grep -oP "msys2.*?tar\.xz" | tail --lines=1 > tmpfile
+	%CURL_CMD% --silent http://repo.msys2.org/distrib/x86_64/ 2>&1 | grep -oP "msys2.*?tar\.xz" | tail --lines=1 > tmpfile
 	set /p downlink= < tmpfile
 	set downlink=http://repo.msys2.org/distrib/x86_64/%downlink%
 	echo %downlink% >> installation-links.txt
@@ -233,12 +230,12 @@ REM ### GET DOWLOAD LINKS ###
 	echo %downlink% >> installation-links.txt
 
 	@REM python 2.7
-	curl --silent https://www.python.org/downloads/ 2>&1 | grep -oP "https.*python/2.*\.msi" | head --lines=1 > tmpfile
+	%CURL_CMD% --silent https://www.python.org/downloads/ 2>&1 | grep -oP "https.*python/2.*\.msi" | head --lines=1 > tmpfile
 	set /p downlink= < tmpfile
 	echo %downlink% >> installation-links.txt
 
 	@REM cmake
-	curl --silent https://cmake.org/download/ 2>&1 | grep -m1 -oP "/files/.*/cmake.*win64.*\.zip.>" | head --lines=1 > tmpfile
+	%CURL_CMD% --silent https://cmake.org/download/ 2>&1 | grep -m1 -oP "/files/.*/cmake.*win64.*\.zip.>" | head --lines=1 > tmpfile
 	set /p downlink= < tmpfile
 	set downlink=%downlink:~0,-2%
 	set downlink=https://cmake.org%downlink%
@@ -272,11 +269,11 @@ REM ### DOWNLOAD HTTP FILE ###
 	@echo %~1
 	set dlURL=%~1
 	for %%x in (%~1) do set currFileName=%%~nxx
-	curl -L -O --progress-bar %~1
+	%CURL_CMD% -L -O --progress-bar %~1
 	7z t %currFileName% 2>&1 | grep ERROR >nul
 	IF !errorlevel! == 0 (
 		@echo Download %currFileName% failed. Trying one more time.
-		curl -L -O --progress-bar !dlURL!
+		%CURL_CMD% -L -O --progress-bar !dlURL!
 		7z t %currFileName% 2>&1 | grep ERROR >nul
 		IF !errorlevel! == 0 (
 			@echo Download failed again. Please manually download !dlURL!
@@ -543,7 +540,7 @@ REM ### INSTALL QT VS EXTENSION ###
 	for %%x in (%QT_VSIX%) do set currFileName=%%~nxx
 	IF /I "%B_INSTALL_QT_VS_EXT%"=="YES" (
 		@echo Downloading %currFileName%
-		curl -L -O --progress-bar "%QT_VSIX%" 2>&1
+		%CURL_CMD% -L -O --progress-bar "%QT_VSIX%" 2>&1
 		IF !errorlevel! NEQ 0 @echo ERROR: Could not download the Qt extension vsix from "%QT_VSIX%" && goto :eof
 		set VSIX_INSTALLER="%VS_2017_LOCATION%\%VS_2017_INSTANCE_NAME%\Common7\IDE\VSIXInstaller.exe"
 		@echo Installing Qt Visual Studio Tools..
@@ -554,11 +551,76 @@ exit /b
 REM ### END OF INSTALL QT VS EXTENSION ###
 
 
+REM ### INSTALL ALL DEPENDENCIES ###
+:install-all-dependencies
+	@echo.
+	@echo Installing all dependencies.
+	@echo It might take some time, go make yourself a hot chocolate while waiting :)
+	@echo Installing chocolatey to install dependencies
+	@"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))" && SET "PATH=%PATH%;%ALLUSERSPROFILE%\chocolatey\bin"
+	@echo Installing dependencies: git curl 7zip visualstudio2017community visualstudio2017-workload-nativedesktop
+	cinst -y git curl 7zip visualstudio2017community visualstudio2017-workload-nativedesktop
+	curl -k --silent -o curl-ca-bundle.crt https://curl.haxx.se/ca/cacert.pem
+	@echo Adding needed features to Visual Studio
+	"%VS_INSTALLER%" modify --quiet --installPath "%VS_INSTALL_PATH%" --add Microsoft.VisualStudio.ComponentGroup.NativeDesktop.Win81 --add Microsoft.VisualStudio.Component.Windows10SDK.15063.Desktop
+	where RefreshEnv.cmd >nul 2>&1
+	IF %errorlevel% NEQ 0 (
+		%CURL_CMD% --silent -L -O https://raw.githubusercontent.com/chocolatey/choco/fdfcd06/src/chocolatey.resources/redirects/RefreshEnv.cmd
+	)
+	call RefreshEnv.cmd
+
+	@echo.
+	@echo Done installing the dependencies!
+	@echo Please check if a reboot is needed, and if so -  reboot before continuing.
+exit /b
+REM ### END OF INSTALL ALL DEPENDENCIES ###
+
+
+REM ### NOTIFY DEPENDENCIES STATUS ###
+:notify-dependencies-status
+	IF "%bad%" == "false" (
+		call :check-admin
+		IF !errorlevel! NEQ 0 @echo. && @echo. && goto usage
+		@echo Basic dependencies are met. More dependencies checks regarding VS2017 will follow.
+		@echo You can start the script^^!
+		@echo.
+		pause
+		@echo.
+		exit /b 0
+	) ELSE (
+		@echo.
+		@echo.
+		@echo Some things are missing, that's the time to fix it^^!
+		@echo.
+		@echo If you had any problems or missing programs, 
+		@echo you can install them with chocolatey.
+		@echo.
+		@echo.
+		@echo To get more details about the dependencies, call tdesktop-dev-installer /?
+		@echo.
+		exit /b 1
+	)
+exit /b
+REM ### END OF NOTIFY DEPENDENCIES STATUS ###
+
+
+REM ### INSTALL DEPENDENCIES ###
+:install-dependencies
+call :install-all-dependencies
+goto script-end
+REM ### END OF INSTALL DEPENDENCIES ###
+
+
 REM ### USAGE ###
 :usage
-	@echo Usage: tdesktop-dev-installer.bat ^<tdesktop-buildpath^>
+	@echo Usage: tdesktop-dev-installer.bat [ /? ^| /install-dependencies ^| tdesktop-buildpath ]
 	@echo Note: Remember to run the script with elevated permissions.
 	@echo.
+	@echo. /?                       Show this help message.
+	@echo  /install-dependencies    Installing chocolatey and the pre-dependencies
+	@echo                           listed at the bottom.
+	@echo  tdesktop-buildpath       The root path where all Telegram Desktop and 
+	@echo                           related files will be.
 	@echo.
 	@echo Dependencies:
 	@echo  * git
@@ -569,17 +631,14 @@ REM ### USAGE ###
 	@echo  * 7z
 	@echo  * Visual Studio 2017
 	@echo      ** VS 2017 Features:
-	@echo          *# Windows development with C++ 
-	@echo          *# Windows development with C++ : Windows 8.1 SDK and UCRT SDK
-	@echo          *# Windows development with C++ : Windows 10 SDK (10.0.15063.0) for Desktop C++ [x86 and x64]
+	@echo          ** Windows development with C++ 
+	@echo              *+ Windows 8.1 SDK and UCRT SDK
+	@echo              *+ Windows 10 SDK (10.0.15063.0) for Desktop C++ [x86 and x64]
 	@echo.
-	@echo To install all dependencies with chocolatey, you can run:
+	@echo To install or read about chocolatey, visit: https://chocolatey.org/install#installing-chocolatey
 	@echo.
-	@echo     *#  cinst -y windows-sdk-8.1 windows-sdk-10.1 visualstudio2017community git curl 7zip
-	@echo     *#  cinst -y visualstudio2017-workload-nativedesktop --package-parameters "--add includeRecommended;Microsoft.VisualStudio.Workload.NativeDesktop;Microsoft.VisualStudio.ComponentGroup.NativeDesktop.Win81;Microsoft.VisualStudio.Component.Windows10SDK.15063.Desktop"
-	@echo.
-	@echo To install chocolatey, visit: https://chocolatey.org/install#installing-chocolatey
-	@echo.
+	@echo If you want to install and handle the dependencies manually, 
+	@echo you can take a look at this script content for some guidelines.
 exit /b 1
 REM ### END OF USAGE ###
 
@@ -590,3 +649,5 @@ REM ### END OF USAGE ###
 @echo.
 pause
 goto :eof
+
+:eof
