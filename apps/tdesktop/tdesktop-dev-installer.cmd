@@ -5,7 +5,17 @@ set bad=false
 
 IF "%1"=="/?" goto usage
 
-set CURL_CMD=curl --cacert curl-ca-bundle.crt
+date /t > tmpfile
+set /p currDate=<tmpfile
+time /t > tmpfile
+set /p currTime=<tmpfile
+echo|set /p=%currDate% > tmpfile
+echo|set /p=%currTime% >> tmpfile
+set /p startTime=<tmpfile
+del /Q tmpfile
+
+set SCRIPT_BASE=%~dp0
+set CURL_CMD=curl --cacert %SCRIPT_BASE%\curl-ca-bundle.crt
 set TD_ROOT_DIR=C:\TBuild
 set VS_DEV_CMD_REL_PATH=Common7\Tools\VsDevCmd.bat
 set VS_2017_LOCATION=C:\Program Files (x86)\Microsoft Visual Studio\2017
@@ -16,6 +26,9 @@ set VS_INSTALLER=%VS_2017_LOCATION%\..\Installer\vs_installer.exe
 set QT_VSIX=https://theqtcompany.gallerycdn.vsassets.io/extensions/theqtcompany/qtvisualstudiotools-19123/2.1.2/1501755913304/273958/1/qt-vsaddin-msvc2017-2.1.2-beta-03.08.2017.vsix
 
 IF "%1"=="/install-dependencies" goto install-dependencies
+IF "%1"=="/install-all" (
+	call :install-all-dependencies
+)
 
 REM Verify needed commands exist
 where git >nul 2>&1
@@ -26,6 +39,7 @@ IF %errorlevel% NEQ 0 (
 	where git > tmpfile
 	set /p git_install_dir= < tmpfile
 	set git_install_dir=!git_install_dir:~0,-12!
+	del /Q tmpfile
 	
 	where head >nul 2>&1
 	IF !errorlevel! NEQ 0 set "path=!git_install_dir!\usr\bin;%PATH%"
@@ -50,6 +64,8 @@ IF %errorlevel% NEQ 0 (
 	set bad=true
 ) ELSE (
 	curl https://example.com/curl-test-ssl 2>&1 | grep -o "SSL certificate problem" >nul 2>&1
+	curl -k --silent -o curl-ca-bundle.crt https://curl.haxx.se/ca/cacert.pem
+	curl https://example.com/curl-test-ssl 2>&1 | grep -o "SSL certificate problem" >nul 2>&1
 	IF !errorlevel! == 0 (
 		set bad=true
 		@echo There's a problem with curl getting https addresses. Please fix that^^!
@@ -63,12 +79,15 @@ IF %errorlevel% NEQ 0 (
 	@echo **7z** was not found.
 )
 
-call :notify-dependencies-status
+call :notify-dependencies-status %1
 IF %errorlevel% NEQ 0 goto :eof
 
 
-set /p "VS_2017_LOCATION=Enter the location of VS installation (without specific version) or press [ENTER] for default [%VS_2017_LOCATION%]: "
-set /p "VS_2017_INSTANCE_NAME=Enter the relevant instance name or press [ENTER] for default [%VS_2017_INSTANCE_NAME%]: "
+IF NOT "%1"=="/install-all" (
+	set /p "VS_2017_LOCATION=Enter the location of VS installation (without specific version) or press [ENTER] for default [%VS_2017_LOCATION%]: "
+	set /p "VS_2017_INSTANCE_NAME=Enter the relevant instance name or press [ENTER] for default [%VS_2017_INSTANCE_NAME%]: "
+)
+
 set VS_INSTALL_PATH=%VS_2017_LOCATION%\%VS_2017_INSTANCE_NAME%
 set VS_DEV_INIT_BATCH=%VS_INSTALL_PATH%\%VS_DEV_CMD_REL_PATH%
 set VS_INSTALLER=%VS_2017_LOCATION%\..\Installer\vs_installer.exe
@@ -106,7 +125,7 @@ IF NOT EXIST "C:\Program Files (x86)\Windows Kits\10\Include\10.0.15063.0" (
 	@echo.
 )
 
-call :notify-dependencies-status
+call :notify-dependencies-status %1
 IF %errorlevel% NEQ 0 goto :eof
 
 
@@ -118,12 +137,19 @@ IF %errorlevel% NEQ 0 (
 
 REM All good, start the actual script.
 
-IF [%1]==[] (
-	set /p "TD_ROOT_DIR=Enter the root path for Telegram Desktop dev folder or press [ENTER] for default [%TD_ROOT_DIR%]: "
-	
+IF "%1"=="/install-all" (
+	set TD_ROOT_DIR_PARAM=%2
 ) ELSE (
-	set TD_ROOT_DIR=%1
+	set TD_ROOT_DIR_PARAM=%1
 )
+
+IF [%TD_ROOT_DIR_PARAM%]==[] (
+	set /p "TD_ROOT_DIR=Enter the root path for Telegram Desktop dev folder or press [ENTER] for default [%TD_ROOT_DIR%]: "	
+) ELSE (
+	set TD_ROOT_DIR=%TD_ROOT_DIR_PARAM%
+)
+
+echo TD_ROOT_DIR is %TD_ROOT_DIR%
 
 IF "%TD_ROOT_DIR%"=="" (
 	@echo.
@@ -151,25 +177,25 @@ set THIRD_PARTY=%TD_ROOT_DIR%\ThirdParty
 
 
 pushd %THIRD_PARTY%
-call :install-all-dependencies
-rem call :install-third-party
-rem call :install-libraries
-rem call :build-tdesktop
-rem call :install-qt-vs-extension
+rem call :install-all-dependencies
+call :install-third-party
+call :install-libraries
+call :build-tdesktop
+call :install-qt-vs-extension
 popd
 goto script-end
-rem 
-rem REM ### INSTALL THIRD PARTY ###
-rem :install-third-party
-rem 	call :get-download-links
-rem 	call :download-installation-files
-rem 	call :install-all-third-party-folders
-rem 	call :update-path
-rem 	call :remove-sys-path-duplicates
-rem 	call RefreshEnv.cmd
-rem 	call :verify-third-party-folders
-rem 	call :remove-uneeded-files
-rem exit /b
+
+REM ### INSTALL THIRD PARTY ###
+:install-third-party
+	call :get-download-links
+	call :download-installation-files
+	call :install-all-third-party-folders
+	call :update-path
+	call :remove-sys-path-duplicates
+	call RefreshEnv.cmd
+	call :verify-third-party-folders
+	call :remove-uneeded-files
+exit /b
 REM ### END OF INSTALL THIRD PARTY ###
 
 REM ### MAIN ###
@@ -289,7 +315,7 @@ REM ### END OF DOWNLOAD HTTP FILE ###
 REM ### REMOVE UNEEDED FILES ###
 :remove-uneeded-files
 	pushd %THIRD_PARTY%
-	@echo|set /p dummy=Searching for files to clean.. 
+	@echo Searching for files to clean.. 
 	for /f "tokens=*" %%f in ('dir /b . /A-D') do del /Q "%%f"
 	popd
 exit /b
@@ -408,7 +434,7 @@ REM ### REMOVE PATH DUPLICATES ###
 REM ### GETTING LIBRARIES ###
 :install-libraries
 	pushd %TD_ROOT_DIR%
-	call %VS_DEV_INIT_BATCH%
+	call "%VS_DEV_INIT_BATCH%"
 
 	REM ### SECTION COPIED FROM https://github.com/telegramdesktop/tdesktop/blob/dev/docs/building-msvc.md ###
 	SET PATH=%cd%\ThirdParty\Perl\bin;%cd%\ThirdParty\Python27;%cd%\ThirdParty\NASM;%cd%\ThirdParty\jom;%cd%\ThirdParty\cmake\bin;%cd%\ThirdParty\yasm;%PATH%
@@ -559,8 +585,7 @@ REM ### INSTALL ALL DEPENDENCIES ###
 	@echo Installing chocolatey to install dependencies
 	@"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -InputFormat None -ExecutionPolicy Bypass -Command "iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))" && SET "PATH=%PATH%;%ALLUSERSPROFILE%\chocolatey\bin"
 	@echo Installing dependencies: git curl 7zip visualstudio2017community visualstudio2017-workload-nativedesktop
-	cinst -y git curl 7zip visualstudio2017community visualstudio2017-workload-nativedesktop
-	curl -k --silent -o curl-ca-bundle.crt https://curl.haxx.se/ca/cacert.pem
+	cinst --execution-timeout=7200 -y git curl 7zip visualstudio2017community visualstudio2017-workload-nativedesktop
 	@echo Adding needed features to Visual Studio
 	"%VS_INSTALLER%" modify --quiet --installPath "%VS_INSTALL_PATH%" --add Microsoft.VisualStudio.ComponentGroup.NativeDesktop.Win81 --add Microsoft.VisualStudio.Component.Windows10SDK.15063.Desktop
 	where RefreshEnv.cmd >nul 2>&1
@@ -571,7 +596,6 @@ REM ### INSTALL ALL DEPENDENCIES ###
 
 	@echo.
 	@echo Done installing the dependencies!
-	@echo Please check if a reboot is needed, and if so -  reboot before continuing.
 exit /b
 REM ### END OF INSTALL ALL DEPENDENCIES ###
 
@@ -584,7 +608,9 @@ REM ### NOTIFY DEPENDENCIES STATUS ###
 		@echo Basic dependencies are met. More dependencies checks regarding VS2017 will follow.
 		@echo You can start the script^^!
 		@echo.
-		pause
+		IF NOT "%1"=="/install-all" (
+			pause
+		)
 		@echo.
 		exit /b 0
 	) ELSE (
@@ -607,6 +633,8 @@ REM ### END OF NOTIFY DEPENDENCIES STATUS ###
 REM ### INSTALL DEPENDENCIES ###
 :install-dependencies
 call :install-all-dependencies
+@echo Please check if a reboot is needed, and if so -  reboot before continuing.
+pause
 goto script-end
 REM ### END OF INSTALL DEPENDENCIES ###
 
@@ -619,6 +647,7 @@ REM ### USAGE ###
 	@echo. /?                       Show this help message.
 	@echo  /install-dependencies    Installing chocolatey and the pre-dependencies
 	@echo                           listed at the bottom.
+	@echo  /install-all             Same as calling /install-dependencies and the script will ask for tdesktop-buildpath
 	@echo  tdesktop-buildpath       The root path where all Telegram Desktop and 
 	@echo                           related files will be.
 	@echo.
@@ -644,8 +673,20 @@ REM ### END OF USAGE ###
 
 
 :script-end
+date /t > tmpfile
+set /p currDate=<tmpfile
+time /t > tmpfile
+set /p currTime=<tmpfile
+echo|set /p=%currDate% > tmpfile
+echo|set /p=%currTime% >> tmpfile
+set /p endTime=<tmpfile
+del /Q tmpfile
 @echo.
 @echo Done^^!
+@echo.
+@echo      = Running Information =
+@echo Started : %startTime%
+@echo Ended   : %endTime%
 @echo.
 pause
 goto :eof
