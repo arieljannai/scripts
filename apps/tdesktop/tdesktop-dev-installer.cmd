@@ -5,14 +5,7 @@ set bad=false
 
 IF "%1"=="/?" goto usage
 
-date /t > tmpfile
-set /p currDate=<tmpfile
-time /t > tmpfile
-set /p currTime=<tmpfile
-echo|set /p=%currDate% > tmpfile
-echo|set /p=%currTime% >> tmpfile
-set /p startTime=<tmpfile
-del /Q tmpfile
+set startTime=%DATE% %TIME%
 
 set SCRIPT_BASE=%~dp0
 set CURL_CMD=curl --cacert %SCRIPT_BASE%\curl-ca-bundle.crt
@@ -181,7 +174,7 @@ rem call :install-all-dependencies
 call :install-third-party
 call :install-libraries
 call :build-tdesktop
-call :install-qt-vs-extension
+call :install-qt-vs-extension %1
 popd
 goto script-end
 
@@ -433,6 +426,7 @@ REM ### REMOVE PATH DUPLICATES ###
 
 REM ### GETTING LIBRARIES ###
 :install-libraries
+	@echo on
 	pushd %TD_ROOT_DIR%
 	call "%VS_DEV_INIT_BATCH%"
 
@@ -456,13 +450,13 @@ REM ### GETTING LIBRARIES ###
 	cd openssl
 	git checkout OpenSSL_1_0_1-stable
 	perl Configure no-shared --prefix=%cd%\Release --openssldir=%cd%\Release VC-WIN32
-	ms\do_ms
+	call ms\do_ms
 	nmake -f ms\nt.mak
 	nmake -f ms\nt.mak install
 	xcopy tmp32\lib.pdb Release\lib\
 	nmake -f ms\nt.mak clean
 	perl Configure no-shared --prefix=%cd%\Debug --openssldir=%cd%\Debug debug-VC-WIN32
-	ms\do_ms
+	call ms\do_ms
 	nmake -f ms\nt.mak
 	nmake -f ms\nt.mak install
 	xcopy tmp32.dbg\lib.pdb Debug\lib\
@@ -533,17 +527,18 @@ REM ### GETTING LIBRARIES ###
 	git apply ../../../tdesktop/Telegram/Patches/qtbase_5_6_2.diff
 	cd ..
 
-	configure -debug-and-release -force-debug-info -opensource -confirm-license -static -I "%cd%\..\openssl\Release\include" -no-opengl -openssl-linked OPENSSL_LIBS_DEBUG="%cd%\..\openssl\Debug\lib\ssleay32.lib %cd%\..\openssl\Debug\lib\libeay32.lib" OPENSSL_LIBS_RELEASE="%cd%\..\openssl\Release\lib\ssleay32.lib %cd%\..\openssl\Release\lib\libeay32.lib" -mp -nomake examples -nomake tests -platform win32-msvc2015
+	call configure -debug-and-release -force-debug-info -opensource -confirm-license -static -I "%cd%\..\openssl\Release\include" -no-opengl -openssl-linked OPENSSL_LIBS_DEBUG="%cd%\..\openssl\Debug\lib\ssleay32.lib %cd%\..\openssl\Debug\lib\libeay32.lib" OPENSSL_LIBS_RELEASE="%cd%\..\openssl\Release\lib\ssleay32.lib %cd%\..\openssl\Release\lib\libeay32.lib" -mp -nomake examples -nomake tests -platform win32-msvc2015
 
 	jom -j4
 	jom -j4 install
 	cd ..
 
 	cd ../tdesktop/Telegram
-	gyp\refresh.bat
+	call gyp\refresh.bat
 
 	REM ### END OF COPIED SECTION ###
 	popd
+	@echo off
 exit /b
 REM ### END OF GETTING LIBRARIES ###
 
@@ -551,6 +546,7 @@ REM ### END OF GETTING LIBRARIES ###
 REM ### BUILD TDESKTOP ###
 :build-tdesktop
 	pushd %TD_ROOT_DIR%\tdesktop\Telegram
+	call "%VS_DEV_INIT_BATCH%"
 	msbuild Telegram.sln /property:Configuration=Debug
 	msbuild Telegram.sln /property:Configuration=Release
 	popd
@@ -562,7 +558,9 @@ REM ### INSTALL QT VS EXTENSION ###
 :install-qt-vs-extension
 	REM qt visual studio tools page: https://marketplace.visualstudio.com/items?itemName=TheQtCompany.QtVisualStudioTools-19123
 	set B_INSTALL_QT_VS_EXT=YES
-	set /p "B_INSTALL_QT_VS_EXT=Install Qt Visual Studio Tools? press [ENTER] for default [%B_INSTALL_QT_VS_EXT%]: "
+	IF NOT "%1"=="/install-all" (
+		set /p "B_INSTALL_QT_VS_EXT=Install Qt Visual Studio Tools? press [ENTER] for default [%B_INSTALL_QT_VS_EXT%]: "
+	)
 	for %%x in (%QT_VSIX%) do set currFileName=%%~nxx
 	IF /I "%B_INSTALL_QT_VS_EXT%"=="YES" (
 		@echo Downloading %currFileName%
@@ -634,7 +632,6 @@ REM ### INSTALL DEPENDENCIES ###
 :install-dependencies
 call :install-all-dependencies
 @echo Please check if a reboot is needed, and if so -  reboot before continuing.
-pause
 goto script-end
 REM ### END OF INSTALL DEPENDENCIES ###
 
@@ -673,14 +670,7 @@ REM ### END OF USAGE ###
 
 
 :script-end
-date /t > tmpfile
-set /p currDate=<tmpfile
-time /t > tmpfile
-set /p currTime=<tmpfile
-echo|set /p=%currDate% > tmpfile
-echo|set /p=%currTime% >> tmpfile
-set /p endTime=<tmpfile
-del /Q tmpfile
+set endTime=%DATE% %TIME%
 @echo.
 @echo Done^^!
 @echo.
